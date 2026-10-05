@@ -1,6 +1,11 @@
 use std::cmp::Ordering;
 
-#[derive(Clone, Debug)]
+/// A blackboard value.
+///
+/// Values of different types are never equal or ordered: `Int(1) != Float(1.0)`.
+/// Conditions that compare different types fail with
+/// [`PlanError::TypeMismatch`](crate::PlanError::TypeMismatch).
+#[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Int(i32),
     Float(f32),
@@ -34,14 +39,7 @@ impl_from!(Bool, bool);
 impl_from!(String, String);
 impl_from!(String, &str, |v| v.to_string());
 
-// Defined through `partial_cmp` so `==` always agrees with `<=` and `>=`
-// (e.g. `Int(1) == Float(1.0)`).
-impl PartialEq for Value {
-    fn eq(&self, other: &Self) -> bool {
-        self.partial_cmp(other) == Some(Ordering::Equal)
-    }
-}
-
+// Only values of the same type are ordered, matching the derived `PartialEq`.
 impl PartialOrd for Value {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (self, other) {
@@ -49,8 +47,6 @@ impl PartialOrd for Value {
             (Self::Int(a), Self::Int(b)) => a.partial_cmp(b),
             (Self::Float(a), Self::Float(b)) => a.partial_cmp(b),
             (Self::String(a), Self::String(b)) => a.partial_cmp(b),
-            (Self::Int(a), Self::Float(b)) => (*a as f32).partial_cmp(b),
-            (Self::Float(a), Self::Int(b)) => a.partial_cmp(&(*b as f32)),
             // Vectors have no ordering; they are only ever equal or unordered.
             (Self::Vector2(a1, a2), Self::Vector2(b1, b2)) => {
                 ((a1, a2) == (b1, b2)).then_some(Ordering::Equal)

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, mem::discriminant};
 
 use super::{error::PlanError, value::Value};
 
@@ -36,8 +36,9 @@ impl Condition {
 
 /// Evaluates `cond` against the blackboard.
 ///
-/// Comparing a key that isn't on the blackboard is an error. `All` and `Any`
-/// short-circuit, so keys after the deciding condition are not checked.
+/// Comparing a key that isn't on the blackboard, or comparing values of different
+/// types, is an error. `All` and `Any` short-circuit, so conditions after the
+/// deciding one are not checked.
 pub fn eval(cond: &Condition, data: &HashMap<String, Value>) -> Result<bool, PlanError> {
     match cond {
         Condition::Compare {
@@ -45,9 +46,10 @@ pub fn eval(cond: &Condition, data: &HashMap<String, Value>) -> Result<bool, Pla
             op,
             value,
         } => {
-            let left = data
-                .get(blackboard_key)
-                .ok_or_else(|| PlanError::MissingKey(blackboard_key.clone()))?;
+            let left = data.get(blackboard_key).ok_or(PlanError::MissingKey)?;
+            if discriminant(left) != discriminant(value) {
+                return Err(PlanError::TypeMismatch);
+            }
             Ok(match op {
                 ComparisonOp::E => left == value,
                 ComparisonOp::NE => left != value,

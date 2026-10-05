@@ -24,23 +24,51 @@
 //! value       := bool | number | string
 //! ```
 
-use chumsky::prelude::*;
+use chumsky::{
+    error::{Error, LabelError},
+    prelude::*,
+    util::MaybeRef,
+};
 
 use super::{
     condition::{ComparisonOp, Condition},
     effect::{ArithmeticOp, Effect},
+    error::ParseError,
     task::Task,
     value::Value,
 };
 
 /// Error/recovery configuration shared by every sub-parser.
-type Extra<'a> = extra::Err<Rich<'a, char>>;
+type Extra<'a> = extra::Err<ParseError>;
+
+// Lets chumsky build `ParseError` directly, so parsing never creates strings.
+impl<'a> Error<'a, &'a str> for ParseError {
+    fn merge(self, other: Self) -> Self {
+        // Errors at the same position: keep the most specific one.
+        match other {
+            ParseError::IntOutOfRange { .. } => other,
+            _ => self,
+        }
+    }
+}
+
+impl<'a, L> LabelError<'a, &'a str, L> for ParseError {
+    fn expected_found<E: IntoIterator<Item = L>>(
+        _expected: E,
+        found: Option<MaybeRef<'a, char>>,
+        span: SimpleSpan,
+    ) -> Self {
+        match found {
+            Some(_) => ParseError::UnexpectedChar { offset: span.start },
+            None => ParseError::UnexpectedEnd { offset: span.start },
+        }
+    }
+}
 
 /// Parse a complete `.htn` source string into its root [`Task`].
 ///
-/// On failure returns the collection of [`Rich`] errors describing what went
-/// wrong (and where).
-pub fn parse(src: &str) -> Result<Task, Vec<Rich<'_, char>>> {
+/// On failure returns the [`ParseError`]s describing what went wrong and where.
+pub fn parse(src: &str) -> Result<Task, Vec<ParseError>> {
     parser().parse(src).into_result()
 }
 
@@ -56,18 +84,14 @@ fn value<'a>() -> impl Parser<'a, &'a str, Value, Extra<'a>> + Clone {
         .then(text::int(10))
         .then(just('.').then(text::digits(10)).or_not())
         .to_slice()
-        .try_map(|s: &str, span| {
+        .try_map(|s: &str, span: SimpleSpan| {
             if s.contains('.') {
-                s.parse()
-                    .map(Value::Float)
-                    .map_err(|_| Rich::custom(span, format!("invalid float literal `{s}`")))
+                // Too many digits rounds to infinity rather than failing.
+                Ok(Value::Float(s.parse().unwrap_or(f32::INFINITY)))
             } else {
-                s.parse().map(Value::Int).map_err(|_| {
-                    Rich::custom(
-                        span,
-                        format!("integer literal `{s}` does not fit in an i32"),
-                    )
-                })
+                s.parse()
+                    .map(Value::Int)
+                    .map_err(|_| ParseError::IntOutOfRange { offset: span.start })
             }
         });
 

@@ -49,18 +49,16 @@ impl Effect {
             ArithmeticOp::Div => (i32::checked_div, |a, b| a / b),
         };
 
-        let current = data
-            .get(key)
-            .ok_or_else(|| EffectError::MissingKey(key.clone()))?;
+        let current = data.get(key).ok_or(EffectError::MissingKey)?;
 
         let new_value = match (current, &self.value) {
             (Value::Int(a), Value::Int(b)) => int_op(*a, *b)
                 .map(Value::Int)
-                .ok_or_else(|| EffectError::InvalidArithmetic(key.clone()))?,
+                .ok_or(EffectError::InvalidArithmetic)?,
             (Value::Float(a), Value::Float(b)) => Value::Float(float_op(*a, *b)),
             (Value::Int(a), Value::Float(b)) => Value::Float(float_op(*a as f32, *b)),
             (Value::Float(a), Value::Int(b)) => Value::Float(float_op(*a, *b as f32)),
-            _ => return Err(EffectError::TypeMismatch(key.clone())),
+            _ => return Err(EffectError::TypeMismatch),
         };
 
         data.insert(key.clone(), new_value);

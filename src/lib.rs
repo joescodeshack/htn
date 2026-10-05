@@ -8,7 +8,7 @@ mod value;
 
 pub use condition::{ComparisonOp, Condition};
 pub use effect::{ArithmeticOp, Effect};
-pub use error::{EffectError, PlanError};
+pub use error::{EffectError, ParseError, PlanError};
 pub use task::{Task, plan};
 pub use value::Value;
 

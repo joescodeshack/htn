@@ -1,8 +1,9 @@
 //! Planner behaviour: selector fallback, root preconditions, empty compound tasks,
-//! and conditions that check keys missing from the blackboard.
+//! conditions that check keys missing from the blackboard, and conditions that
+//! compare values of different types.
 
 use htn::prelude::*;
-use htn::{Condition, parse};
+use htn::{Condition, Value, parse};
 
 fn steps(names: &[&str]) -> Result<Vec<String>, PlanError> {
     Ok(names.iter().map(|s| s.to_string()).collect())
@@ -197,10 +198,7 @@ fn missing_key_in_action_condition_is_an_error() {
         ]
     );
 
-    assert_eq!(
-        plan(&root, &blackboard! {}),
-        Err(PlanError::MissingKey("health".to_string()))
-    );
+    assert_eq!(plan(&root, &blackboard! {}), Err(PlanError::MissingKey));
 }
 
 #[test]
@@ -218,7 +216,7 @@ fn missing_key_is_an_error_for_every_comparison_operator() {
         let root = action!("a", conditions = [c.clone()]);
         assert_eq!(
             plan(&root, &blackboard! {}),
-            Err(PlanError::MissingKey("x".to_string())),
+            Err(PlanError::MissingKey),
             "condition {c:?}"
         );
     }
@@ -231,10 +229,7 @@ fn missing_key_inside_not_is_an_error() {
         conditions = [Condition::Not(Box::new(cond!("x" == 1)))]
     );
 
-    assert_eq!(
-        plan(&root, &blackboard! {}),
-        Err(PlanError::MissingKey("x".to_string()))
-    );
+    assert_eq!(plan(&root, &blackboard! {}), Err(PlanError::MissingKey));
 }
 
 #[test]
@@ -249,7 +244,7 @@ fn missing_key_inside_all_is_an_error() {
 
     assert_eq!(
         plan(&root, &blackboard! { "present" => true }),
-        Err(PlanError::MissingKey("x".to_string()))
+        Err(PlanError::MissingKey)
     );
 }
 
@@ -266,10 +261,7 @@ fn missing_key_in_compound_task_precondition_is_an_error() {
         ]
     );
 
-    assert_eq!(
-        plan(&root, &blackboard! {}),
-        Err(PlanError::MissingKey("in_town".to_string()))
-    );
+    assert_eq!(plan(&root, &blackboard! {}), Err(PlanError::MissingKey));
 }
 
 #[test]
@@ -279,20 +271,14 @@ fn missing_key_in_root_precondition_is_an_error() {
         tasks = [action!("idle")]
     );
 
-    assert_eq!(
-        plan(&root, &blackboard! {}),
-        Err(PlanError::MissingKey("alive".to_string()))
-    );
+    assert_eq!(plan(&root, &blackboard! {}), Err(PlanError::MissingKey));
 }
 
 #[test]
 fn missing_key_parsed_from_dsl_is_an_error() {
     let root = parse(r#"selector { action "heal" (health < 50) action "idle" }"#).unwrap();
 
-    assert_eq!(
-        plan(&root, &blackboard! {}),
-        Err(PlanError::MissingKey("health".to_string()))
-    );
+    assert_eq!(plan(&root, &blackboard! {}), Err(PlanError::MissingKey));
 }
 
 #[test]
@@ -328,6 +314,107 @@ fn missing_key_in_unreached_branch_is_not_an_error() {
 
     assert_eq!(
         plan(&root, &blackboard! { "health" => 10 }),
+        steps(&["attack"])
+    );
+}
+
+// ---- conditions comparing different types ------------------------------------
+
+#[test]
+fn int_vs_float_is_an_error_for_every_comparison_operator() {
+    let conditions = [
+        cond!("x" == 1.0),
+        cond!("x" != 1.0),
+        cond!("x" < 1.0),
+        cond!("x" > 1.0),
+        cond!("x" <= 1.0),
+        cond!("x" >= 1.0),
+    ];
+
+    for c in conditions {
+        let root = action!("a", conditions = [c.clone()]);
+        assert_eq!(
+            plan(&root, &blackboard! { "x" => 1 }),
+            Err(PlanError::TypeMismatch),
+            "condition {c:?}"
+        );
+    }
+}
+
+#[test]
+fn mismatched_types_are_an_error() {
+    let cases = [
+        (cond!("x" == "high"), Value::Int(1)),
+        (cond!("x" != 1), Value::Bool(true)),
+        (cond!("x" == true), Value::String("yes".into())),
+        (
+            cond!("x" == Value::Vector2(0.0, 0.0)),
+            Value::Vector3(0.0, 0.0, 0.0),
+        ),
+    ];
+
+    for (c, current) in cases {
+        let root = action!("a", conditions = [c.clone()]);
+        assert_eq!(
+            plan(&root, &blackboard! { "x" => current }),
+            Err(PlanError::TypeMismatch),
+            "condition {c:?}"
+        );
+    }
+}
+
+#[test]
+fn type_mismatch_aborts_planning_instead_of_falling_back() {
+    let root = selector!(
+        conditions = [],
+        tasks = [
+            action!("heal", conditions = [cond!("health" < 50)]),
+            action!("idle"),
+        ]
+    );
+
+    assert_eq!(
+        plan(&root, &blackboard! { "health" => 40.0 }),
+        Err(PlanError::TypeMismatch)
+    );
+}
+
+#[test]
+fn type_mismatch_inside_not_is_an_error() {
+    // `not` must not turn a failed comparison into `true`.
+    let root = action!(
+        "a",
+        conditions = [Condition::Not(Box::new(cond!("x" == "one")))]
+    );
+
+    assert_eq!(
+        plan(&root, &blackboard! { "x" => 1 }),
+        Err(PlanError::TypeMismatch)
+    );
+}
+
+#[test]
+fn type_mismatch_parsed_from_dsl_is_an_error() {
+    let root = parse(r#"selector { action "heal" (health < 50) action "idle" }"#).unwrap();
+
+    assert_eq!(
+        plan(&root, &blackboard! { "health" => 40.0 }),
+        Err(PlanError::TypeMismatch)
+    );
+}
+
+#[test]
+fn type_mismatch_in_unreached_branch_is_not_an_error() {
+    let root = selector!(
+        conditions = [],
+        tasks = [
+            action!("attack", conditions = [cond!("health" > 0)]),
+            action!("cast_spell", conditions = [cond!("mana" > 0.0)]),
+        ]
+    );
+
+    assert_eq!(
+        plan(&root, &blackboard! { "health" => 10, "mana" => 5 }),
         steps(&["attack"])
     );
 }

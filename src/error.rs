@@ -1,52 +1,39 @@
-use std::{error::Error, fmt};
-
 /// Why [`plan`](crate::plan) could not produce a plan.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlanError {
     /// No branch of the task network could be decomposed with the current blackboard.
     NoPlan,
     /// A condition checked a key that is not on the blackboard.
-    MissingKey(String),
+    MissingKey,
     /// A selector or sequence with no child tasks was reached while planning.
     EmptyTask,
+    /// A condition compared a blackboard value with a value of a different type.
+    TypeMismatch,
 }
-
-impl fmt::Display for PlanError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NoPlan => write!(f, "no valid plan for the current blackboard"),
-            Self::MissingKey(key) => write!(f, "condition checks missing blackboard key `{key}`"),
-            Self::EmptyTask => write!(f, "selector or sequence has no child tasks"),
-        }
-    }
-}
-
-impl Error for PlanError {}
 
 /// Why an [`Effect`](crate::Effect) could not be applied to the blackboard.
 ///
 /// During planning, an effect error makes its action fail, so a parent selector
 /// moves on to its next child.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EffectError {
     /// Arithmetic was applied to a key that is not on the blackboard.
-    MissingKey(String),
+    MissingKey,
     /// The key's current value can't be combined with the effect's value.
-    TypeMismatch(String),
-    /// Integer arithmetic on the key overflowed or divided by zero.
-    InvalidArithmetic(String),
+    TypeMismatch,
+    /// Integer arithmetic overflowed or divided by zero.
+    InvalidArithmetic,
 }
 
-impl fmt::Display for EffectError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::MissingKey(key) => write!(f, "effect changes missing blackboard key `{key}`"),
-            Self::TypeMismatch(key) => write!(f, "effect value has the wrong type for key `{key}`"),
-            Self::InvalidArithmetic(key) => {
-                write!(f, "integer overflow or division by zero on key `{key}`")
-            }
-        }
-    }
+/// Why [`parse`](crate::parse) rejected its input.
+///
+/// Each variant carries the byte offset in the source where the problem starts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParseError {
+    /// A character that the grammar doesn't allow at this position.
+    UnexpectedChar { offset: usize },
+    /// The input ended before the task network was complete.
+    UnexpectedEnd { offset: usize },
+    /// An integer literal that does not fit in an `i32`.
+    IntOutOfRange { offset: usize },
 }
-
-impl Error for EffectError {}
