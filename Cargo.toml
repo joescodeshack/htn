@@ -1,7 +1,12 @@
 [package]
 name = "htn"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
+description = "Hierarchical Task Network for Game AI"
+license = "Apache-2.0"
+authors = ["Joseph Shering <joseph.shering@gmail.com>"]
+repository = "https://github.com/joescodeshack/htn"
+keywords = ["game", "ai"]
 
 [lib]
 path = "src/lib.rs"
